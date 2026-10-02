@@ -1,0 +1,5 @@
+E           AssertionError: assert ('we poll the API every second' == 'I suggest we... every second'
+E             
+E             - I suggest we poll the API every second
+E             ? ----------
+E             + we poll the API every second or 'poll the API every second' in 'we poll the api every second')
