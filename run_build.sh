@@ -75,6 +75,7 @@ SUMMARY=""
 for prompt in steps/[0-9][0-9]_*.md; do
   step="$(basename "$prompt" | cut -c1-2)"
   [[ "$step" < "$START_STEP" ]] && continue
+  [[ -n "${END_STEP:-}" && "$step" > "$END_STEP" ]] && break
   log "########## STEP $step: $prompt ##########"
   args=(); for f in $(files_for "$step"); do mkdir -p "$(dirname "$f")"; args+=(--file "$f"); done
   args+=(--read SPEC.md); for f in $(reads_for "$step"); do [ -f "$f" ] && args+=(--read "$f"); done
