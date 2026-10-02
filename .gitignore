@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.aider*
+!.aider.conf.yml
+!.aider.model.settings.yml
+!.aider.model.metadata.json
+build.log
+nohup.out
+.last_pytest.txt
+.fix_*.md
+*.db

@@ -1,0 +1,15 @@
+openai-api-base: http://127.0.0.1:8080/v1
+openai-api-key: dummy
+model: openai/qwen3.8-27b
+weak-model: openai/qwen3.8-27b
+edit-format: whole
+map-tokens: 512
+auto-commits: false
+dirty-commits: false
+gitignore: false
+show-model-warnings: false
+check-update: false
+analytics-disable: true
+timeout: 1800
+model-settings-file: .aider.model.settings.yml
+model-metadata-file: .aider.model.metadata.json

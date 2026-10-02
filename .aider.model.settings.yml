@@ -1,0 +1,11 @@
+- name: openai/qwen3.8-27b
+  edit_format: whole
+  use_repo_map: true
+  examples_as_sys_msg: true
+  reasoning_tag: think
+  extra_params:
+    max_tokens: 6144
+    temperature: 0.2
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
