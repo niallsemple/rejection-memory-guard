@@ -1,5 +1,8 @@
 import re
-from typing import List, Dict, Any, Optional, Union
+import os
+import json
+import urllib.request
+from typing import List, Dict, Any, Optional, Union, Tuple
 from datetime import datetime, timezone
 
 from rmg.models import Record, Fingerprint, RejectionType, Status
@@ -40,6 +43,42 @@ UNCERTAINTY_PATTERNS = [
 _COMPILED_REJECTION_PATTERNS = [re.compile(p, re.IGNORECASE) for p in REJECTION_PATTERNS]
 _COMPILED_UNCERTAINTY_PATTERNS = [re.compile(p, re.IGNORECASE) for p in UNCERTAINTY_PATTERNS]
 
+PHRASE_MAP = [
+    (r"\b(?:the\s+)?most profitable\b", "top-performing"),
+    (r"\b(?:the\s+)?best[- ]performing\b", "top-performing"),
+    (r"\bbefore we can execute\b", "before execution")
+]
+
+LEAD_IN = re.compile(
+    r"^(?:i\s+(?:suggest|propose|think|recommend)\s+(?:that\s+)?(?:we\s+)?(?:should\s+)?|"
+    r"how about\s+(?:we\s+)?|"
+    r"what about\s+|"
+    r"let'?s\s+|"
+    r"why don'?t we\s+|"
+    r"maybe\s+we\s+(?:could|should)\s+|"
+    r"we\s+(?:could|should|can)\s+)",
+    re.IGNORECASE
+)
+
+BOILERPLATE = re.compile(
+    r"(?:we\s+)?already tried(?:\s+(?:that|it))?|"
+    r"(?:didn'?t|did not) work|"
+    r"don'?t suggest (?:that|it|this) again|"
+    r"scrap (?:that|it|this)|"
+    r"ruled (?:that|it) out|"
+    r"move on|"
+    r"decided against(?: (?:that|it))?|"
+    r"that approach is dead|"
+    r"forget(?: about)?(?: (?:that|it))?|"
+    r"no more",
+    re.IGNORECASE
+)
+
+FILLER = {
+    "it", "that", "this", "we", "so", "and", "but", "because", "since", "as",
+    "the", "then", "again", "please", "ok", "okay"
+}
+
 def is_uncertain(text: str) -> bool:
     """Check if the text contains uncertainty markers."""
     for pattern in _COMPILED_UNCERTAINTY_PATTERNS:
@@ -73,6 +112,114 @@ def _is_hedged_rejection(text: str, rejection_match: re.Match) -> bool:
         if pattern.search(last_words_str):
             return True
     return False
+
+def _apply_phrase_map(text: str) -> str:
+    for pattern, replacement in PHRASE_MAP:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
+def clean_idea(text: str) -> str:
+    # Take the first sentence
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if not sentences:
+        return ""
+    t = sentences[0].strip()
+    # Strip trailing punctuation
+    t = t.rstrip(".!?,; ")
+    # Remove lead-in
+    t = LEAD_IN.sub("", t).strip()
+    # Apply phrase map
+    t = _apply_phrase_map(t)
+    # Move trailing on-chain before the last noun
+    t = re.sub(r"\b(\w+) on-chain$", r"on-chain \1", t)
+    # Remove articles
+    t = re.sub(r"\b(?:the|a|an)\s+", "", t, flags=re.IGNORECASE)
+    # Collapse whitespace
+    t = re.sub(r"\s+", " ", t).strip()
+    # Uppercase first character
+    if t:
+        t = t[0].upper() + t[1:]
+    return t
+
+def clean_reason(content: str) -> str:
+    # Split by reconsider markers
+    pre = re.split(r"\b(?:only reconsider if|unless)\b", content, flags=re.IGNORECASE)[0]
+    # Split into clauses
+    clauses = re.split(r"[.;!?,]|\s[—–-]\s|—|–", pre)
+    reason = ""
+    for clause in clauses:
+        res = BOILERPLATE.sub(" ", clause)
+        words = res.split()
+        # Drop leading filler words
+        while words and words[0].lower() in FILLER:
+            words.pop(0)
+        if words:
+            reason = " ".join(words)
+            break
+    if not reason:
+        # Fallback to first non-empty stripped clause
+        for clause in clauses:
+            if clause.strip():
+                reason = clause.strip()
+                break
+        if not reason:
+            reason = "Rejected by user"
+    
+    reason = _apply_phrase_map(reason)
+    reason = reason.rstrip(".!?,; ")
+    if reason:
+        reason = reason[0].upper() + reason[1:]
+    return reason
+
+def parse_reconsider_if(content: str) -> str:
+    m = re.search(r"\b(?:only reconsider if|unless)\s+(.+)", content, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return ""
+    text = m.group(1)
+    # Cut at first sentence end
+    text = re.split(r"[.!?](?:\s|$)", text)[0]
+    text = text.strip().rstrip(".!?,; ")
+    # Remove one leading "our ", "the ", "if "
+    text = re.sub(r"^(?:our |the |if )", "", text, flags=re.IGNORECASE)
+    return text
+
+def _llm_refine(idea: str, reason: str, raw: str) -> Optional[Tuple[str, str]]:
+    if os.environ.get("RMG_OFFLINE") == "1":
+        return None
+    try:
+        url = os.environ.get("RMG_LLM_URL", "http://127.0.0.1:8080/v1/chat/completions")
+        model = os.environ.get("RMG_LLM_MODEL", "qwen3.8-27b")
+        prompt = (
+            "Rewrite as JSON {\"idea\": short imperative idea name, max 8 words, "
+            "\"reason\": short rejection reason, max 8 words}. "
+            f"Idea: {idea}\nReason: {reason}\nConversation: {raw}"
+        )
+        payload = {
+            "model": model,
+            "temperature": 0,
+            "max_tokens": 120,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=20) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            content = data["choices"][0]["message"]["content"]
+            m = re.search(r"\{.*\}", content, re.DOTALL)
+            if not m:
+                return None
+            parsed = json.loads(m.group(0))
+            idea2 = parsed.get("idea", "")
+            reason2 = parsed.get("reason", "")
+            if isinstance(idea2, str) and isinstance(reason2, str) and idea2 and reason2 and len(idea2) < 80 and len(reason2) < 80:
+                return (idea2, reason2)
+    except Exception:
+        pass
+    return None
 
 def _extract_idea_from_assistant(message: str) -> str:
     """
@@ -181,47 +328,39 @@ def extract_rejections(messages: Union[List[Dict[str, str]], str], now: Optional
         if not idea:
             continue
             
-        # Determine rejection type and reconsider_if
-        rejection_type = RejectionType.HARD
-        reconsider_if = ""
+        # Clean idea and reason
+        idea = clean_idea(idea)
+        reason = clean_reason(content)
+        reconsider_if = parse_reconsider_if(content)
         
-        # Check for "only reconsider if"
-        match = re.search(r"only reconsider if\s+(.+)", content, re.IGNORECASE)
-        if match:
+        # Determine rejection type
+        rejection_type = RejectionType.HARD
+        
+        if reconsider_if:
             rejection_type = RejectionType.CONDITIONAL
-            reconsider_if = match.group(1).strip()
             
-        # Check for "unless"
-        if not reconsider_if:
-            match = re.search(r"unless\s+(.+)", content, re.IGNORECASE)
-            if match:
-                rejection_type = RejectionType.CONDITIONAL
-                reconsider_if = match.group(1).strip()
-                
         # Check for FAILED_EXPERIMENT
         if re.search(r"tried|failed in testing|didn'?t work|did not work", content, re.IGNORECASE):
-            if rejection_type != RejectionType.CONDITIONAL: # CONDITIONAL takes precedence? Or maybe FAILED_EXPERIMENT is more specific?
-                # Spec: "FAILED_EXPERIMENT for 'tried'/'failed in testing'/'didn't work'"
-                # "CONDITIONAL with reconsider_if = text after 'only reconsider if' / 'unless'"
-                # If both are present, which wins?
-                # "only reconsider if" implies a condition for reconsideration, which fits CONDITIONAL.
-                # "tried" implies it was tested and failed, which fits FAILED_EXPERIMENT.
-                # Let's prioritize CONDITIONAL if "only reconsider if" is present, as it's more specific about the condition.
-                # Otherwise, FAILED_EXPERIMENT.
+            if rejection_type != RejectionType.CONDITIONAL:
                 rejection_type = RejectionType.FAILED_EXPERIMENT
                 
         # Check for PREFERENCE
         if re.search(r"I don'?t like", content, re.IGNORECASE):
             rejection_type = RejectionType.PREFERENCE
             
+        # LLM Refine
+        refined = _llm_refine(idea, reason, content)
+        if refined:
+            idea, reason = refined
+            
         # Create Record
         record = Record(
             canonical_idea=idea,
             original_discussion=f"Assistant: {last_assistant_message}\nUser: {content}",
-            rejection_reason=content,
+            rejection_reason=reason,
             fingerprint=Fingerprint(
                 mechanism=idea,
-                why_failed=content,
+                why_failed=reason,
                 conditions_to_reconsider=reconsider_if
             ),
             rejection_type=rejection_type,
