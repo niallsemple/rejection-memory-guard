@@ -96,4 +96,23 @@ def test_reconsider_text_format(ledger):
     
     guard = Guard(ledger)
     text = guard.reconsider_text(record, "X")
-    assert text == "This was previously rejected because we need sub-second latency. I am reconsidering it because X has changed."
+    assert text == "This was previously rejected because we need sub-second latency. I am reconsidering it because X now appears to be true."
+
+def test_reconsider_text_clean_grammar(ledger):
+    record = Record(record_type=RecordType.REJECTION, canonical_idea="Copy trades of top-performing on-chain wallets",
+        rejection_reason="Edge decays before execution.", reconsider_if="execution latency drops below 100ms.",
+        status=Status.ACTIVE)
+    text = Guard(ledger).reconsider_text(record, "our execution latency now drops below 100ms")
+    assert text == ("This was previously rejected because edge decays before execution. "
+                    "I am reconsidering it because execution latency drops below 100ms now appears to be true.")
+    assert ".." not in text
+
+def test_reconsider_text_keeps_acronym_and_uses_change(ledger):
+    record = Record(record_type=RecordType.REJECTION, canonical_idea="poll the API", rejection_reason="API rate limits",
+        status=Status.ACTIVE)
+    text = Guard(ledger).reconsider_text(record, "Budget increased.")
+    assert text == "This was previously rejected because API rate limits. I am reconsidering it because budget increased now appears to be true."
+
+def test_extract_proposals_keeps_hyphenated_words():
+    assert extract_proposals("How about we mirror the positions of top-performing whale addresses?") == ["How about we mirror the positions of top-performing whale addresses"]
+    assert extract_proposals("- use websockets\n- try polling") == ["use websockets", "try polling"]

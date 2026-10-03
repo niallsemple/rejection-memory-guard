@@ -18,6 +18,14 @@ def _requirements(context) -> list:
         return list(context.get("requirements", []))
     return []
 
+def _clause(text) -> str:
+    t = (text or "").strip().rstrip(".!?;, ").strip()
+    if t.lower().startswith("if "):
+        t = t[3:].strip()
+    if len(t) > 1 and t[0].isupper() and not t[1].isupper():
+        t = t[0].lower() + t[1:]
+    return t
+
 def _relaxes(reason: str, requirement: str) -> bool:
     reason_l = reason.lower()
     req_l = requirement.lower()
@@ -51,7 +59,7 @@ def extract_proposals(message: str) -> List[str]:
     
     # Simple split
     # Replace bullet markers with newlines to ensure they are treated as separators
-    cleaned_message = re.sub(r'[-*•]\s*', '\n', message)
+    cleaned_message = re.sub(r'(?m)^\s*[-*•]\s+', '\n', message)
     
     # Split on sentence enders and newlines
     # We keep the delimiters in the split to potentially re-attach? No, usually proposals are self-contained.
@@ -139,7 +147,9 @@ class Guard:
         return [self.check_one(p, context) for p in proposals]
 
     def reconsider_text(self, record, change) -> str:
-        return f"This was previously rejected because {record.rejection_reason}. I am reconsidering it because {change} has changed."
+        reason = _clause(record.rejection_reason) or "it did not fit the earlier constraints"
+        condition = _clause(record.reconsider_if) or _clause(change)
+        return f"This was previously rejected because {reason}. I am reconsidering it because {condition} now appears to be true."
 
     def check_one(self, proposal: str, context: Optional[str] = None) -> GuardResult:
         # Get active rejections
