@@ -1,0 +1,11 @@
+Implement `rmg/api.py` and `tests/test_api.py` (step 8a of SPEC.md). Use the repo map and the read-only files for the existing APIs: `Ledger` (rmg/ledger.py), `Guard`, `GuardResult` (rmg/guard.py), `extract_rejections` (rmg/extract.py), `similarity` (rmg/similarity.py), `Record`, `Fingerprint`, `Scope`, `RejectionType`, `Status` (rmg/models.py).
+
+`rmg/api.py`: module-level functions that each take an optional `ledger=None` kwarg (default: a module-level Ledger created lazily from env RMG_DB, via `get_ledger()`; also `set_ledger(l)`):
+- `reject(idea, reason, *, aliases=None, category="", scope=Scope.ENTIRE_CONCEPT, rejection_type=RejectionType.HARD, reconsider_if="", evidence="", original_discussion="", replacement="", ledger=None) -> Record`. Builds the fingerprint: objective = category or idea, mechanism = idea, why_failed = reason, conditions_to_reconsider = reconsider_if, replacement. If reconsider_if is set and rejection_type is HARD, use CONDITIONAL. Logs event "reject".
+- `reopen(id, reason, ledger=None)` (status REOPENED, event "reopen"), `supersede(id, new_idea, ledger=None)` (status SUPERSEDED, superseded_by=new_idea, event "supersede"), `archive(id, ledger=None)` (status ARCHIVED), `update_conditions(id, conditions, ledger=None)` (sets reconsider_if and fingerprint.conditions_to_reconsider and saves).
+- `check(candidate, context=None, ledger=None) -> list[dict]`: Guard(ledger).check(...) results as dicts; log one "check" event per result.
+- `search_rejections(query, limit=10, ledger=None) -> list[Record]` ranked by similarity to record.match_text(), score > 0.1.
+- `ingest(messages, ledger=None) -> list[Record]`: extract_rejections then add each to the ledger.
+- `mark_false_positive(record_id, ledger=None)` logs event "false_positive".
+
+Tests in `tests/test_api.py` (autouse fixture: monkeypatch RMG_OFFLINE=1; a Ledger on tmp_path passed as ledger=): reject, then reopen/supersede/archive each add history entries; update_conditions persists; check("Let's hit the REST endpoint once a second") after reject("poll the API every second", "rate limits") returns decision "BLOCK"; search_rejections("polling") finds it; ingest of an assistant proposal plus "we already tried that, didn't work" adds 1 record.

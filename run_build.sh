@@ -41,7 +41,7 @@ reads_for(){ case "$1" in   # most important first; trimmed from the end to fit 
   05) echo "rmg/similarity.py rmg/ledger.py rmg/models.py";;
   06a|06b) echo "";;
   07) echo "";;
-  08a) echo "rmg/guard.py rmg/ledger.py rmg/extract.py";;
+  08a) echo "";;
   08b) echo "rmg/api.py rmg/inject.py";;
   09) echo "rmg/ledger.py rmg/api.py";;
   10) echo "rmg/ledger.py rmg/models.py";;
