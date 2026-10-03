@@ -1,14 +1,13 @@
-Implement step 11 of SPEC.md: the key acceptance demo. Read `rmg/api.py`, `rmg/inject.py`, `rmg/guard.py`, `rmg/extract.py`.
+Step 11: the acceptance demo. Create `demo.py` (repo root) and `tests/test_demo.py`. Keep the reply short; write both files in full. Do not edit any other file.
 
-Create `demo.py` (repo root) and `tests/test_demo.py`.
+Existing API (do not change): `from rmg import api` with `api.ingest(messages, ledger=None) -> list[Record]`, `api.reject(idea, reason, ledger=None, ...) -> Record`, `api.check(candidate, context=None, ledger=None) -> list[dict]` (dict keys: candidate, decision ("ALLOW"/"WARN"/"BLOCK"/"RECONSIDER"), matched_rejection, similarity, reason, conditions_changed); `from rmg.inject import compaction_block`; `from rmg.ledger import Ledger` (`Ledger(path)`; path None = default db).
 
-`demo.py` defines `run_demo(db_path=None, verbose=True) -> dict` and a `__main__` block:
-1. Session 1 conversation (list of role/content messages): assistant suggests "I suggest we copy the trades of the most profitable wallets on-chain."; user replies "We already tried that, it didn't work — the edge decays before we can execute. Don't suggest that again. Only reconsider if our execution latency drops below 100ms."
-2. `api.ingest(conversation)` stores the rejection (assert at least one record).
-3. Compaction: the conversation is discarded; only a summary string ("Working on a Solana trading strategy; several ideas evaluated.") plus `inject.compaction_block(ledger, task)` remain. Print both.
-4. A fresh agent (no access to the conversation) proposes, in new words: "How about we mirror the positions of top-performing whale addresses?"
-5. `api.check(proposal)` -> decision must be BLOCK, and the reason must include the original rejection reason. Print the JSON result.
-6. Return {"injection": ..., "summary": ..., "result": <first result dict>, "record_id": ...}.
-Make sure `api.ingest` produces a record whose match text covers copy trading (if extraction alone is not enough, add the idea's aliases in ingest via `similarity.concepts`).
+`demo.py` defines `run_demo(db_path=None, verbose=True) -> dict` and `if __name__ == "__main__": run_demo()`. If db_path is None, use a fresh temp file (tempfile.mkdtemp). Steps (print each with a heading when verbose):
+1. Session 1 conversation: `[{"role": "assistant", "content": "I suggest we copy the trades of the most profitable wallets on-chain."}, {"role": "user", "content": "We already tried that, it didn't work — the edge decays before we can execute. Don't suggest that again. Only reconsider if our execution latency drops below 100ms."}]`. `records = api.ingest(conv, ledger=ledger)`; assert records.
+2. Compaction: discard the conversation; `summary = "Working on a Solana trading strategy; several ideas evaluated."`; `injection = compaction_block(ledger, "improve the Solana trading strategy using top wallets")`. Print both.
+3. Fresh agent, reworded idea: `blocked = api.check("How about we mirror the positions of top-performing whale addresses?", ledger=ledger)[0]`; print `json.dumps(blocked, indent=2)`; print a line `f"Reworded idea -> {blocked['decision']}"`.
+4. False-positive check: `api.reject("poll the API every second", "rate limits", ledger=ledger)`; `fallback = api.check("Use WebSockets with REST polling only as a fallback on disconnect", ledger=ledger)[0]`; print `f"WebSocket with REST fallback -> {fallback['decision']}"`.
+5. Reconsider: `reconsider = api.check("Let's copy the top wallets' trades again", context={"requirements": ["our execution latency now drops below 100ms"]}, ledger=ledger)[0]`; print `f"Reconsider case -> {reconsider['decision']}: {reconsider['reason']}"`.
+6. Return `{"injection": injection, "summary": summary, "result": blocked, "fallback": fallback, "reconsider": reconsider, "record_id": records[0].id}`.
 
-`tests/test_demo.py` (RMG_OFFLINE=1, tmp_path db): result decision == "BLOCK"; reason mentions "edge decays"; injection contains "REJECTED APPROACHES — DO NOT REPROPOSE"; the original conversation text "copy the trades" is NOT required for the check (the guard only uses the ledger).
+`tests/test_demo.py` (autouse monkeypatch RMG_OFFLINE=1; `out = run_demo(str(tmp_path / "d.db"), verbose=False)`): `out["result"]["decision"] == "BLOCK"`; `"edge decays" in out["result"]["reason"]`; `"REJECTED APPROACHES — DO NOT REPROPOSE" in out["injection"]`; `out["fallback"]["decision"] in ("WARN", "ALLOW")`; `out["reconsider"]["decision"] == "RECONSIDER"`; `"copy the trades" not in out["summary"]`.

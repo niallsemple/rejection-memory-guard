@@ -45,7 +45,7 @@ reads_for(){ case "$1" in   # most important first; trimmed from the end to fit 
   08b) echo "rmg/api.py rmg/inject.py";;
   09) echo "rmg/ledger.py rmg/api.py";;
   10) echo "rmg/ledger.py rmg/models.py";;
-  11) echo "rmg/api.py rmg/inject.py";;
+  11) echo "";;
   12) echo "SPEC.md rmg/api.py";;
 esac; }
 fmt_for(){ case "$1" in 04b|06a|06b) echo diff;; *) echo whole;; esac; }
