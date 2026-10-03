@@ -24,7 +24,7 @@ class Ledger:
             if dir_name:
                 os.makedirs(dir_name, exist_ok=True)
         
-        self.conn = sqlite3.connect(self.path)
+        self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self._init_db()
 
     def _init_db(self):
