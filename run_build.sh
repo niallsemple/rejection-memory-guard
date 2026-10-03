@@ -25,7 +25,8 @@ files_for(){ case "$1" in
   04b) echo "rmg/similarity.py tests/test_similarity.py";;
   04c) echo "rmg/ledger.py tests/test_ledger.py";;
   05) echo "rmg/guard.py tests/test_guard_basic.py";;
-  06) echo "rmg/guard.py tests/test_guard_fp.py";;
+  06a) echo "rmg/guard.py tests/test_guard_fp.py";;
+  06b) echo "rmg/guard.py tests/test_guard_reconsider.py";;
   07) echo "rmg/inject.py tests/test_inject.py";;
   08a) echo "rmg/api.py tests/test_api.py";;
   08b) echo "rmg/cli.py rmg/__main__.py tests/test_cli.py";;
@@ -38,7 +39,7 @@ reads_for(){ case "$1" in   # most important first; trimmed from the end to fit 
   01|02|03|04) echo "SPEC.md";;
   04b|04c) echo "";;
   05) echo "rmg/similarity.py rmg/ledger.py rmg/models.py";;
-  06) echo "tests/test_guard_basic.py rmg/similarity.py";;
+  06a|06b) echo "";;
   07) echo "rmg/ledger.py rmg/similarity.py";;
   08a) echo "rmg/guard.py rmg/ledger.py rmg/extract.py";;
   08b) echo "rmg/api.py rmg/inject.py";;
@@ -47,7 +48,7 @@ reads_for(){ case "$1" in   # most important first; trimmed from the end to fit 
   11) echo "rmg/api.py rmg/inject.py";;
   12) echo "SPEC.md rmg/api.py";;
 esac; }
-fmt_for(){ case "$1" in 04b|06) echo diff;; *) echo whole;; esac; }
+fmt_for(){ case "$1" in 04b|06a|06b) echo diff;; *) echo whole;; esac; }
 fsize(){ [ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0; }
 
 # build aider args: editable files then reads that fit in the budget
@@ -98,7 +99,7 @@ for prompt in steps/[0-9][0-9]*_*.md; do
     extra=""
     for f in $(grep -oE 'rmg/[A-Za-z0-9_]+\.py' .last_pytest.txt | sort -u); do
       [[ " $(files_for "$step") " == *" $f "* ]] || extra="$extra $f"; done
-    { echo "Step $step is not finished. Fix it. Rules: write the product code so the tests pass; only change a test if it clearly contradicts the instructions below; never delete or weaken tests. Return COMPLETE files (whole-file edits), never partial files or placeholders."
+    { echo "Step $step is not finished. Fix it. Rules: write the product code so the tests pass; only change a test if it clearly contradicts the instructions below; never delete or weaken tests. Use small SEARCH/REPLACE blocks for existing files; write new or empty files in full. Never leave placeholders. Keep the reply short."
       [ -n "$emp" ] && echo "Problem: these files are empty or unchanged: $emp"
       [ -n "$extra" ] && echo "The failure involves$extra, which is added as editable: fix the bug there if that is where it is."
       echo; echo "Step instructions:"; cat "$prompt"
