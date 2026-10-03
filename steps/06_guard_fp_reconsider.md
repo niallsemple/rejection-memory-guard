@@ -1,3 +1,5 @@
+Keep the reply short: use SEARCH/REPLACE blocks on rmg/guard.py rather than rewriting it; the new test file can be written in full.
+
 Implement step 6 of SPEC.md: false-positive protection and contradiction/reconsider detection, by extending `rmg/guard.py` (keep all existing tests passing). Read the current `rmg/guard.py` first.
 
 Add:

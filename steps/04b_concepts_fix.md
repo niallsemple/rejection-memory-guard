@@ -1,5 +1,7 @@
 Rework concept detection in `rmg/similarity.py` Keep every public function name and all existing tests passing.
 
+Keep the reply short: use SEARCH/REPLACE blocks that only touch CONCEPT_SYNONYMS, concepts() and the new tests; do not rewrite the rest of the files.
+
 1. `CONCEPT_SYNONYMS` currently contains dozens of junk entries ("copy trading gadget", "copy trading forecast", ...). Replace it with a short, clean table, and make `concepts(text)` keyword based instead of exact-phrase based, because exact phrases miss paraphrases like "mirror the top traders".
    New structure: `CONCEPT_RULES: dict[str, list[tuple[set[str], set[str]]]]`, where each rule is (verbs, objects) given as stemmed tokens. A concept matches when the text's stemmed tokens contain at least one verb AND at least one object from the same rule, OR contain any phrase from `CONCEPT_SYNONYMS[key]` (keep `CONCEPT_SYNONYMS` as a short phrase list of at most 12 per key, for backward compatibility).
    - copy_trading: verbs {copy, mirror, follow, duplicat, replicat, clone, shadow, piggyback}, objects {wallet, trader, whale, address, trade, position, smart, money, top}

@@ -9,6 +9,7 @@ MAX_FIX="${MAX_FIX:-4}"
 AIDER_TIMEOUT="${AIDER_TIMEOUT:-3600}"
 START_STEP="${START_STEP:-01}"
 STOP_ON_FAIL="${STOP_ON_FAIL:-1}"
+SKIP_STEPS="${SKIP_STEPS:-}"           # e.g. "04c"
 BUDGET_BYTES="${BUDGET_BYTES:-30000}"   # message + chat files, ~8.5k tokens; leaves room for whole-file output in a 16k ctx
 PY="$PWD/.venv/bin/python"
 AIDER="${AIDER_BIN:-$HOME/.aider-venv/bin/aider}"
@@ -46,6 +47,7 @@ reads_for(){ case "$1" in   # most important first; trimmed from the end to fit 
   11) echo "rmg/api.py rmg/inject.py";;
   12) echo "SPEC.md rmg/api.py";;
 esac; }
+fmt_for(){ case "$1" in 04b|06) echo diff;; *) echo whole;; esac; }
 fsize(){ [ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0; }
 
 # build aider args: editable files then reads that fit in the budget
@@ -60,7 +62,7 @@ build_args(){ # $1 msgfile, $2 editable list, $3 read list
 run_aider(){ local msg="$1"; shift; wait_llm; log "aider start: $msg $*"
   perl -e 'alarm shift; exec @ARGV' "$AIDER_TIMEOUT" "$AIDER" --yes-always --no-auto-commits --no-dirty-commits \
     --no-show-model-warnings --no-check-update --no-analytics --no-pretty --no-stream --no-fancy-input \
-    --map-tokens 1024 --message-file "$msg" "$@" < /dev/null
+    --map-tokens 1024 --edit-format "$EDIT_FMT" --message-file "$msg" "$@" < /dev/null
   log "aider exit rc=$?"
   # clean junk files created when the model emits prose as a filename
   git ls-files --others --exclude-standard | grep -vE '^(rmg|tests|steps)/|^(demo\.py|README\.md|pyproject\.toml)$' | while IFS= read -r j; do log "removing junk file: $j"; rm -f -- "$j"; done
@@ -77,13 +79,18 @@ for prompt in steps/[0-9][0-9]*_*.md; do
   base="$(basename "$prompt")"; step="${base%%_*}"
   [[ "$step" < "$START_STEP" ]] && continue
   [[ -n "${END_STEP:-}" && "$step" > "$END_STEP" ]] && break
+  [[ " $SKIP_STEPS " == *" $step "* ]] && { log "skipping step $step"; continue; }
   log "########## STEP $step: $prompt ##########"
   build_args "$prompt" "$(files_for "$step")" "$(reads_for "$step")"
+  EDIT_FMT="$(fmt_for "$step")"
+  pre_rev="$(git stash create 2>/dev/null || git rev-parse HEAD)"
   run_aider "$prompt" "${ARGS[@]}"
   status=FAIL
   for attempt in $(seq 0 "$MAX_FIX"); do
     log "pytest (step $step, attempt $attempt)"
     emp="$(empty_files "$(files_for "$step")")"
+    if git diff --quiet "$pre_rev" -- $(files_for "$step") 2>/dev/null && [ -z "$(git ls-files --others --exclude-standard -- $(files_for "$step"))" ]; then
+      emp="${emp} (NO CHANGES were applied in this step; your previous reply was not applied, likely because it was too long or malformed. Make the required edits now, keeping the reply short: use small SEARCH/REPLACE blocks.)"; fi
     if [ -z "$emp" ] && run_tests; then status=PASS; break; fi
     [ -n "$emp" ] && log "empty files after step: $emp"
     [ "$attempt" -ge "$MAX_FIX" ] && break
@@ -92,11 +99,12 @@ for prompt in steps/[0-9][0-9]*_*.md; do
     for f in $(grep -oE 'rmg/[A-Za-z0-9_]+\.py' .last_pytest.txt | sort -u); do
       [[ " $(files_for "$step") " == *" $f "* ]] || extra="$extra $f"; done
     { echo "Step $step is not finished. Fix it. Rules: write the product code so the tests pass; only change a test if it clearly contradicts the instructions below; never delete or weaken tests. Return COMPLETE files (whole-file edits), never partial files or placeholders."
-      [ -n "$emp" ] && echo "These files are still EMPTY and must be written in full: $emp"
+      [ -n "$emp" ] && echo "Problem: these files are empty or unchanged: $emp"
       [ -n "$extra" ] && echo "The failure involves$extra, which is added as editable: fix the bug there if that is where it is."
       echo; echo "Step instructions:"; cat "$prompt"
       echo; echo "pytest output:"; echo '```'; grep -vE '^\s*$' .last_pytest.txt | tail -60; echo '```'; } > "$fixmsg"
     build_args "$fixmsg" "$(files_for "$step") $extra" "$(reads_for "$step")"
+    EDIT_FMT=diff
     run_aider "$fixmsg" "${ARGS[@]}"
   done
   log "STEP $step RESULT: $status ($(tail -1 .last_pytest.txt 2>/dev/null))"

@@ -10,3 +10,4 @@ nohup.out
 .last_pytest.txt
 .fix_*.md
 *.db
+.driver.pid
