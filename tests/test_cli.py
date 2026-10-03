@@ -68,3 +68,31 @@ def test_cli_stats(tmp_path, capsys):
     assert ret == 0
     captured = capsys.readouterr()
     assert "rejected_ideas_total" in captured.out
+
+
+def test_cli_add_alias_and_inject(tmp_path, capsys):
+    db_path = str(tmp_path / "test.db")
+    ret = main(["--db", db_path, "add", "poll the api every second", "--reason", "rate limits",
+                "--reconsider-if", "sub-second updates are no longer required"])
+    assert ret == 0
+    record_id = capsys.readouterr().out.strip()
+    assert record_id
+
+    assert main(["--db", db_path, "list"]) == 0
+    assert record_id in capsys.readouterr().out
+
+    assert main(["--db", db_path, "inject", "keep the API data fresh by polling"]) == 0
+    out = capsys.readouterr().out
+    assert "REJECTED APPROACHES" in out
+    assert "poll the api every second" in out
+
+    assert main(["--db", db_path, "inject", "sync data", "--handoff", "--approach", "webhooks"]) == 0
+    out = capsys.readouterr().out
+    assert "TASK:" in out and "KNOWN REJECTIONS:" in out and "webhooks" in out
+
+
+def test_cli_version(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0
+    assert "rmg" in capsys.readouterr().out

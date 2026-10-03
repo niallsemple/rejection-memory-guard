@@ -211,8 +211,9 @@ def tfidf_similarity(a: str, b: str, corpus: Optional[List[str]] = None) -> floa
 
 class Embedder:
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None, timeout: int = 5):
-        self.base_url = base_url or os.environ.get("RMG_LLM_BASE", "http://127.0.0.1:8080/v1")
-        self.model = model
+        from rmg import config
+        self.base_url = (base_url or config.base_url()).rstrip("/")
+        self.model = model if model is not None else config.embed_model()
         self.timeout = timeout
         self._unavailable = False
     
@@ -225,6 +226,7 @@ class Embedder:
         
         try:
             import json
+            from rmg import config
             payload = {"input": texts}
             if self.model:
                 payload["model"] = self.model
@@ -232,7 +234,7 @@ class Embedder:
             req = urllib.request.Request(
                 f"{self.base_url}/embeddings",
                 data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers=config.headers(),
                 method="POST"
             )
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:

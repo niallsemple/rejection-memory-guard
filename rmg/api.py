@@ -5,9 +5,21 @@ from rmg.models import Record, Fingerprint, RecordType, Status, Scope, Rejection
 from rmg.ledger import Ledger
 from rmg.guard import Guard
 from rmg.extract import extract_rejections
-from rmg.similarity import similarity
+from rmg.similarity import similarity, Embedder
+from rmg import config
 
 _LEDGER = None
+_EMBEDDER = None
+
+
+def _embedder() -> Optional[Embedder]:
+    """Shared Embedder when RMG_EMBEDDINGS=1 (and not offline), else None."""
+    global _EMBEDDER
+    if not config.use_embeddings() or config.offline():
+        return None
+    if _EMBEDDER is None:
+        _EMBEDDER = Embedder()
+    return _EMBEDDER
 
 def get_ledger() -> Ledger:
     global _LEDGER
@@ -98,7 +110,7 @@ def update_conditions(id: str, conditions: str, ledger: Optional[Ledger] = None)
 
 def check(candidate: str, context: Optional[str] = None, ledger: Optional[Ledger] = None) -> List[Dict[str, Any]]:
     l = _l(ledger)
-    guard = Guard(l)
+    guard = Guard(l, embedder=_embedder())
     results = guard.check(candidate, context)
     for r in results:
         l.log_event("check", r.matched_rejection.get("id") if r.matched_rejection else None)

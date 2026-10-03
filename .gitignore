@@ -15,3 +15,6 @@ web_demo.log
 .web_demo.pid
 .rmg/
 *.log
+*.egg-info/
+build/
+dist/

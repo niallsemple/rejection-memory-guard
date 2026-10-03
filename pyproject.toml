@@ -5,8 +5,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rejection-memory-guard"
 version = "0.1.0"
-description = "Stops AI agents re-proposing ideas the user has already rejected."
+description = "Persistent memory of rejected ideas for LLM agents: blocks re-proposals after context compaction, summarisation, handoffs or restarts."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Niall Semple" }]
 requires-python = ">=3.10"
+dependencies = []  # standard library only
+keywords = [
+    "llm", "ai-agents", "agent-memory", "guardrails", "context-compaction",
+    "long-context", "prompt-engineering", "llama-cpp", "ollama", "openai-compatible",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/niallsemple/rejection-memory-guard"
+Issues = "https://github.com/niallsemple/rejection-memory-guard/issues"
 
 [project.optional-dependencies]
 dev = ["pytest"]

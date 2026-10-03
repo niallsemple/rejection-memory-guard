@@ -184,11 +184,12 @@ def parse_reconsider_if(content: str) -> str:
     return text
 
 def _llm_refine(idea: str, reason: str, raw: str) -> Optional[Tuple[str, str]]:
-    if os.environ.get("RMG_OFFLINE") == "1":
+    from rmg import config
+    if config.offline():
         return None
     try:
-        url = os.environ.get("RMG_LLM_URL", "http://127.0.0.1:8080/v1/chat/completions")
-        model = os.environ.get("RMG_LLM_MODEL", "qwen3.8-27b")
+        url = config.chat_url()
+        model = config.chat_model()
         prompt = (
             "Rewrite as JSON {\"idea\": short imperative idea name, max 8 words, "
             "\"reason\": short rejection reason, max 8 words}. "
@@ -198,13 +199,14 @@ def _llm_refine(idea: str, reason: str, raw: str) -> Optional[Tuple[str, str]]:
             "model": model,
             "temperature": 0,
             "max_tokens": 120,
-            "chat_template_kwargs": {"enable_thinking": False},
             "messages": [{"role": "user", "content": prompt}]
         }
+        if config.disable_thinking():
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode('utf-8'),
-            headers={"Content-Type": "application/json"}
+            headers=config.headers()
         )
         with urllib.request.urlopen(req, timeout=20) as response:
             data = json.loads(response.read().decode('utf-8'))

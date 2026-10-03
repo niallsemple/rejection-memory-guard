@@ -9,13 +9,18 @@ from rmg.models import Scope, RejectionType
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="RMG CLI")
-    parser.add_argument("--db", type=str, default=None, help="Path to the ledger database")
+    from rmg import __version__
+    parser = argparse.ArgumentParser(
+        prog="rmg",
+        description="Rejection Memory Guard: remember rejected ideas and stop agents re-proposing them.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--db", type=str, default=None, help="Path to the ledger database (default: $RMG_DB or ~/.rmg/ledger.db)")
     
     subparsers = parser.add_subparsers(dest="command")
 
     # reject
-    p_reject = subparsers.add_parser("reject", help="Reject an idea")
+    p_reject = subparsers.add_parser("reject", aliases=["add"], help="Record a rejected idea (alias: add)")
     p_reject.add_argument("idea", type=str)
     p_reject.add_argument("--reason", type=str, required=True)
     p_reject.add_argument("--reconsider-if", type=str, default="")
@@ -82,7 +87,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ledger = Ledger(args.db) if args.db else None
 
     try:
-        if args.command == "reject":
+        if args.command in ("reject", "add"):
             scope_map = {
                 "entire_concept": Scope.ENTIRE_CONCEPT,
             }
@@ -155,7 +160,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         elif args.command == "serve":
             try:
                 from rmg.web import serve
-                print(f"Serving on http://{args.host}:{args.port}")
                 serve(ledger or api.get_ledger(), host=args.host, port=args.port)
             except ImportError:
                 print("not available yet")
