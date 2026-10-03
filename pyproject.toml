@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rejection-memory-guard"
+version = "0.1.0"
+description = "Stops AI agents re-proposing ideas the user has already rejected."
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+rmg = "rmg.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["rmg*"]
