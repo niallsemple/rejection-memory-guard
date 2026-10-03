@@ -11,3 +11,4 @@ nohup.out
 .fix_*.md
 *.db
 .driver.pid
+web_demo.log

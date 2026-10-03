@@ -129,6 +129,26 @@ python demo.py
 A conversation rejects an idea, the context is compacted away, and a fresh agent
 proposes the same idea in new words — it is BLOCKed with the reason.
 
+## Web demo (try the guard in a browser)
+
+```bash
+RMG_OFFLINE=1 .venv/bin/python web_demo.py            # http://127.0.0.1:8765
+# detached:
+RMG_OFFLINE=1 nohup .venv/bin/python web_demo.py > web_demo.log 2>&1 &
+```
+
+Paste a candidate idea (plus optional "conditions now true", one per line) and the
+real guard shows **BLOCK / WARN / RECONSIDER / ALLOW** with similarity, the matched
+rejection (idea, reason, reconsider-if), the reason sentence and raw JSON. The sidebar
+lists active rejections and the injection block; you can add rejections or reset.
+Three example buttons reproduce the `demo.py` cases (BLOCK, WARN, RECONSIDER).
+
+It seeds its own throwaway ledger in a temp dir with the `demo.py` session-1
+conversation (never your real `~/.rmg` ledger). Options: `--port` (next free port is
+used if taken), `--host`, `--data-dir`. JSON API: `GET /api/state`,
+`POST /api/check {"candidate","conditions"}`, `POST /api/reject {"idea","reason","reconsider_if"}`,
+`POST /api/reset`. Stop it with `pkill -f web_demo.py` (or `kill <pid>` from `web_demo.log`).
+
 ## Architecture Notes
 
 The ledger stores a generic `Record` with a `record_type` field
