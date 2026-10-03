@@ -21,7 +21,8 @@ files_for(){ case "$1" in
   02) echo "rmg/ledger.py tests/test_ledger.py";;
   03) echo "rmg/extract.py tests/test_extract.py";;
   04) echo "rmg/similarity.py tests/test_similarity.py";;
-  04b) echo "rmg/similarity.py tests/test_similarity.py rmg/ledger.py tests/test_ledger.py";;
+  04b) echo "rmg/similarity.py tests/test_similarity.py";;
+  04c) echo "rmg/ledger.py tests/test_ledger.py";;
   05) echo "rmg/guard.py tests/test_guard_basic.py";;
   06) echo "rmg/guard.py tests/test_guard_fp.py";;
   07) echo "rmg/inject.py tests/test_inject.py";;
@@ -34,7 +35,7 @@ files_for(){ case "$1" in
 esac; }
 reads_for(){ case "$1" in   # most important first; trimmed from the end to fit BUDGET_BYTES
   01|02|03|04) echo "SPEC.md";;
-  04b) echo "";;
+  04b|04c) echo "";;
   05) echo "rmg/similarity.py rmg/ledger.py rmg/models.py";;
   06) echo "tests/test_guard_basic.py rmg/similarity.py";;
   07) echo "rmg/ledger.py rmg/similarity.py";;
