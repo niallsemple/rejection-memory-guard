@@ -1,103 +1,107 @@
 #!/bin/bash
-# Rejection Memory Guard build driver: one aider (Qwen via local llama-server) run per step,
-# then pytest, with up to MAX_FIX fix loops. Run with:
-#   nohup caffeinate -dimsu ./run_build.sh >> build.log 2>&1 &
-# Resume from a step: START_STEP=05 ./run_build.sh ...
+# Rejection Memory Guard build driver v2: one aider (Qwen via local llama-server) run per step,
+# then the full pytest suite, with up to MAX_FIX fix runs. Launch with ./launch_detached.sh
+#   START_STEP=05 ./launch_detached.sh      END_STEP=05 limits the run; STOP_ON_FAIL=0 keeps going after a failed step
 cd "$(dirname "$0")" || exit 1
-REPO="$(pwd)"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-export RMG_OFFLINE=1          # tests must not depend on the server
+export RMG_OFFLINE=1
 MAX_FIX="${MAX_FIX:-4}"
-AIDER_TIMEOUT="${AIDER_TIMEOUT:-5400}"   # seconds per aider run
+AIDER_TIMEOUT="${AIDER_TIMEOUT:-3600}"
 START_STEP="${START_STEP:-01}"
-PY="$REPO/.venv/bin/python"
+STOP_ON_FAIL="${STOP_ON_FAIL:-1}"
+BUDGET_BYTES="${BUDGET_BYTES:-30000}"   # message + chat files, ~8.5k tokens; leaves room for whole-file output in a 16k ctx
+PY="$PWD/.venv/bin/python"
 AIDER="${AIDER_BIN:-$HOME/.aider-venv/bin/aider}"
-
 ts(){ date '+%Y-%m-%d %H:%M:%S %Z'; }
 log(){ echo "[$(ts)] $*"; }
+wait_llm(){ until curl -sf -m 10 http://127.0.0.1:8080/health >/dev/null; do log "llama-server not healthy; waiting 60s"; sleep 60; done; }
 
-wait_llm(){
-  until curl -sf -m 10 http://127.0.0.1:8080/health >/dev/null; do
-    log "llama-server not healthy; waiting 60s"; sleep 60; done
-}
-
-# editable files and read-only context per step
 files_for(){ case "$1" in
   01) echo "rmg/__init__.py rmg/models.py tests/__init__.py tests/test_models.py";;
   02) echo "rmg/ledger.py tests/test_ledger.py";;
   03) echo "rmg/extract.py tests/test_extract.py";;
   04) echo "rmg/similarity.py tests/test_similarity.py";;
+  04b) echo "rmg/similarity.py tests/test_similarity.py rmg/ledger.py tests/test_ledger.py";;
   05) echo "rmg/guard.py tests/test_guard_basic.py";;
   06) echo "rmg/guard.py tests/test_guard_fp.py";;
   07) echo "rmg/inject.py tests/test_inject.py";;
-  08) echo "rmg/api.py rmg/cli.py rmg/__main__.py tests/test_api_cli.py";;
-  09) echo "rmg/analytics.py tests/test_analytics.py rmg/api.py rmg/cli.py";;
-  10) echo "rmg/web.py tests/test_web.py rmg/cli.py";;
-  11) echo "demo.py tests/test_demo.py rmg/api.py";;
+  08a) echo "rmg/api.py tests/test_api.py";;
+  08b) echo "rmg/cli.py rmg/__main__.py tests/test_cli.py";;
+  09) echo "rmg/analytics.py tests/test_analytics.py";;
+  10) echo "rmg/web.py tests/test_web.py";;
+  11) echo "demo.py tests/test_demo.py";;
   12) echo "README.md pyproject.toml";;
 esac; }
-reads_for(){ case "$1" in
-  01) echo "";;
-  02) echo "rmg/models.py";;
-  03) echo "rmg/models.py";;
-  04) echo "";;
-  05) echo "rmg/models.py rmg/ledger.py rmg/similarity.py";;
-  06) echo "rmg/models.py rmg/similarity.py tests/test_guard_basic.py";;
-  07) echo "rmg/models.py rmg/ledger.py rmg/similarity.py";;
-  08) echo "rmg/models.py rmg/ledger.py rmg/guard.py rmg/inject.py rmg/extract.py";;
-  09) echo "rmg/ledger.py rmg/models.py";;
-  10) echo "rmg/ledger.py rmg/models.py rmg/similarity.py";;
-  11) echo "rmg/inject.py rmg/guard.py rmg/extract.py rmg/similarity.py";;
-  12) echo "rmg/api.py rmg/cli.py";;
+reads_for(){ case "$1" in   # most important first; trimmed from the end to fit BUDGET_BYTES
+  01|02|03|04) echo "SPEC.md";;
+  04b) echo "";;
+  05) echo "rmg/similarity.py rmg/ledger.py rmg/models.py";;
+  06) echo "tests/test_guard_basic.py rmg/similarity.py";;
+  07) echo "rmg/ledger.py rmg/similarity.py";;
+  08a) echo "rmg/guard.py rmg/ledger.py rmg/extract.py";;
+  08b) echo "rmg/api.py rmg/inject.py";;
+  09) echo "rmg/ledger.py rmg/api.py";;
+  10) echo "rmg/ledger.py rmg/models.py";;
+  11) echo "rmg/api.py rmg/inject.py";;
+  12) echo "SPEC.md rmg/api.py";;
 esac; }
+fsize(){ [ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0; }
 
-run_aider(){ # $1 msgfile, rest: --file/--read args
-  local msg="$1"; shift
-  wait_llm
-  log "aider start: $msg $*"
-  perl -e 'alarm shift; exec @ARGV' "$AIDER_TIMEOUT" \
-    "$AIDER" --yes-always --no-auto-commits --no-dirty-commits --no-show-model-warnings \
-      --no-check-update --no-analytics --no-pretty --no-stream --no-fancy-input \
-      --message-file "$msg" "$@" < /dev/null
-  local rc=$?
-  log "aider exit rc=$rc"
+# build aider args: editable files then reads that fit in the budget
+build_args(){ # $1 msgfile, $2 editable list, $3 read list
+  ARGS=(); local total; total=$(fsize "$1")
+  for f in $2; do mkdir -p "$(dirname "$f")"; ARGS+=(--file "$f"); total=$((total + $(fsize "$f"))); done
+  for f in $3; do [ -f "$f" ] || continue; local s; s=$(fsize "$f")
+    if [ $((total + s)) -le "$BUDGET_BYTES" ]; then ARGS+=(--read "$f"); total=$((total + s)); else log "budget: skipping read $f"; fi; done
+  log "chat payload ~${total} bytes"
 }
 
-run_tests(){
-  "$PY" -m pytest -q -x --timeout=120 -p no:cacheprovider tests > .last_pytest.txt 2>&1
-  local rc=$?
-  cat .last_pytest.txt | tail -60
-  return $rc
+run_aider(){ local msg="$1"; shift; wait_llm; log "aider start: $msg $*"
+  perl -e 'alarm shift; exec @ARGV' "$AIDER_TIMEOUT" "$AIDER" --yes-always --no-auto-commits --no-dirty-commits \
+    --no-show-model-warnings --no-check-update --no-analytics --no-pretty --no-stream --no-fancy-input \
+    --map-tokens 1024 --message-file "$msg" "$@" < /dev/null
+  log "aider exit rc=$?"
+  # clean junk files created when the model emits prose as a filename
+  git ls-files --others --exclude-standard | grep -vE '^(rmg|tests|steps)/|^(demo\.py|README\.md|pyproject\.toml)$' | while IFS= read -r j; do log "removing junk file: $j"; rm -f -- "$j"; done
+  [ -d "./~" ] && rm -rf -- "./~"
 }
 
-log "===== build start (START_STEP=$START_STEP, MAX_FIX=$MAX_FIX) ====="
+run_tests(){ "$PY" -m pytest -q --tb=short -p no:cacheprovider tests > .last_pytest.txt 2>&1; local rc=$?
+  tail -40 .last_pytest.txt; return $rc; }
+empty_files(){ for f in $1; do [ -s "$f" ] || echo "$f"; done; }
+
+log "===== build v2 start (START_STEP=$START_STEP END_STEP=${END_STEP:-} MAX_FIX=$MAX_FIX) ====="
 SUMMARY=""
-for prompt in steps/[0-9][0-9]_*.md; do
-  step="$(basename "$prompt" | cut -c1-2)"
+for prompt in steps/[0-9][0-9]*_*.md; do
+  base="$(basename "$prompt")"; step="${base%%_*}"
   [[ "$step" < "$START_STEP" ]] && continue
   [[ -n "${END_STEP:-}" && "$step" > "$END_STEP" ]] && break
   log "########## STEP $step: $prompt ##########"
-  args=(); for f in $(files_for "$step"); do mkdir -p "$(dirname "$f")"; args+=(--file "$f"); done
-  args+=(--read SPEC.md); for f in $(reads_for "$step"); do [ -f "$f" ] && args+=(--read "$f"); done
-  run_aider "$prompt" "${args[@]}"
+  build_args "$prompt" "$(files_for "$step")" "$(reads_for "$step")"
+  run_aider "$prompt" "${ARGS[@]}"
   status=FAIL
   for attempt in $(seq 0 "$MAX_FIX"); do
     log "pytest (step $step, attempt $attempt)"
-    if run_tests; then status=PASS; break; fi
+    emp="$(empty_files "$(files_for "$step")")"
+    if [ -z "$emp" ] && run_tests; then status=PASS; break; fi
+    [ -n "$emp" ] && log "empty files after step: $emp"
     [ "$attempt" -ge "$MAX_FIX" ] && break
     fixmsg=".fix_${step}_${attempt}.md"
-    { echo "The pytest suite is failing after step $step. Fix the product code (and tests only if a test is clearly wrong about the spec; never delete or weaken tests to make them pass). Keep every existing test passing."
-      echo; echo "Original step instructions:"; cat "$prompt"
-      echo; echo "pytest output (tail):"; echo '```'; tail -120 .last_pytest.txt; echo '```'; } > "$fixmsg"
-    fargs=("${args[@]}")
-    for f in $(grep -oE '(rmg|tests)/[A-Za-z0-9_]+\.py' .last_pytest.txt | sort -u | head -6); do
-      [[ " ${fargs[*]} " == *" --file $f "* ]] || fargs+=(--file "$f"); done
-    run_aider "$fixmsg" "${fargs[@]}"
+    extra=""
+    for f in $(grep -oE 'rmg/[A-Za-z0-9_]+\.py' .last_pytest.txt | sort -u); do
+      [[ " $(files_for "$step") " == *" $f "* ]] || extra="$extra $f"; done
+    { echo "Step $step is not finished. Fix it. Rules: write the product code so the tests pass; only change a test if it clearly contradicts the instructions below; never delete or weaken tests. Return COMPLETE files (whole-file edits), never partial files or placeholders."
+      [ -n "$emp" ] && echo "These files are still EMPTY and must be written in full: $emp"
+      [ -n "$extra" ] && echo "The failure involves$extra, which is added as editable: fix the bug there if that is where it is."
+      echo; echo "Step instructions:"; cat "$prompt"
+      echo; echo "pytest output:"; echo '```'; grep -vE '^\s*$' .last_pytest.txt | tail -60; echo '```'; } > "$fixmsg"
+    build_args "$fixmsg" "$(files_for "$step") $extra" "$(reads_for "$step")"
+    run_aider "$fixmsg" "${ARGS[@]}"
   done
-  log "STEP $step RESULT: $status"
+  log "STEP $step RESULT: $status ($(tail -1 .last_pytest.txt 2>/dev/null))"
   SUMMARY="$SUMMARY\nstep $step: $status"
-  git add -A >/dev/null 2>&1
-  git commit -qm "step $step ($status) by qwen/aider" >/dev/null 2>&1 && log "committed step $step"
+  git add -A >/dev/null 2>&1; git commit -qm "step $step ($status) by qwen/aider" >/dev/null 2>&1 && log "committed step $step"
+  if [ "$status" = FAIL ] && [ "$STOP_ON_FAIL" = 1 ]; then log "stopping: step $step failed (STOP_ON_FAIL=1)"; break; fi
 done
 log "===== build finished ====="
 echo -e "SUMMARY:$SUMMARY"

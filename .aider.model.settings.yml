@@ -4,7 +4,7 @@
   examples_as_sys_msg: true
   reasoning_tag: think
   extra_params:
-    max_tokens: 6144
+    max_tokens: 5120
     temperature: 0.2
     extra_body:
       chat_template_kwargs:

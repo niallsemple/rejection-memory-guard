@@ -1,9 +1,0 @@
-    "copy_trading": [
-        "copy wallets", ...
-        "copy_trading": [
-            "copy wallets", ...
-        ],
-        "polling": [
-            ...
-        ],
-    ],

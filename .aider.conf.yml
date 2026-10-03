@@ -3,7 +3,7 @@ openai-api-key: dummy
 model: openai/qwen3.8-27b
 weak-model: openai/qwen3.8-27b
 edit-format: whole
-map-tokens: 512
+map-tokens: 1024
 auto-commits: false
 dirty-commits: false
 gitignore: false
