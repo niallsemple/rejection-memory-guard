@@ -3,9 +3,11 @@ import json
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Callable
 
-from rmg.models import Record, Decision, Status
+from rmg.models import Record, Decision, Status, Scope
 from rmg.ledger import Ledger
 from rmg.similarity import similarity, concepts, Embedder
+
+FALLBACK_MARKERS = ("only as a fallback", "as a fallback", "fall back to", "fallback", "on disconnect", "as a backup", "instead of", "rather than")
 
 # Verbs that indicate a proposal
 PROPOSAL_VERBS = {
@@ -169,7 +171,19 @@ class Guard:
                 diff_concepts = prop_concepts.symmetric_difference(rec_concepts)
                 diff_str = ", ".join(sorted(diff_concepts)) if diff_concepts else "minor details"
                 reason = f"Similar to rejected '{record.canonical_idea}' but differs: {diff_str}"
-            
+
+            # Fallback rule
+            if decision == Decision.BLOCK:
+                lower_proposal = proposal.lower()
+                if any(marker in lower_proposal for marker in FALLBACK_MARKERS):
+                    decision = Decision.WARN
+                    reason = f"Rejected approach '{record.canonical_idea}' appears only as a fallback/secondary mechanism"
+
+            # Scope rule
+            if record.scope == Scope.EXACT_IMPLEMENTATION and decision == Decision.BLOCK and sim < 0.7:
+                decision = Decision.WARN
+                reason = f"Similar to rejected implementation '{record.canonical_idea}' (exact-implementation scope, similarity {sim:.2f} < 0.7)"
+
             # Optional LLM Judge
             if self.llm_judge:
                 judge_result = self.llm_judge(proposal, record)
