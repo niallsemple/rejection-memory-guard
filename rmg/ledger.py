@@ -15,6 +15,7 @@ class Ledger:
     def __init__(self, path: Optional[str] = None):
         if path is None:
             path = os.environ.get("RMG_DB", os.path.join("~", ".rmg", "ledger.db"))
+            path = os.path.expanduser(path)
         
         self.path = path
         

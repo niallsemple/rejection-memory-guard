@@ -1,4 +1,5 @@
 import pytest
+import os
 from rmg.ledger import Ledger
 from rmg.models import Record, Status, RecordType
 
@@ -141,3 +142,17 @@ def test_events_logging(tmp_path):
 
 def test_no_delete_method():
     assert not hasattr(Ledger, "delete")
+
+def test_default_path_expansion(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("RMG_DB", raising=False)
+    
+    with Ledger() as ledger:
+        pass
+    
+    expected_db_path = tmp_path / ".rmg" / "ledger.db"
+    assert expected_db_path.exists()
+    
+    cwd = os.getcwd()
+    literal_tilde_dir = os.path.join(cwd, "~")
+    assert not os.path.exists(literal_tilde_dir)
