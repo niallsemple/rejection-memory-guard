@@ -83,7 +83,7 @@ for prompt in steps/[0-9][0-9]*_*.md; do
   log "########## STEP $step: $prompt ##########"
   build_args "$prompt" "$(files_for "$step")" "$(reads_for "$step")"
   EDIT_FMT="$(fmt_for "$step")"
-  pre_rev="$(git stash create 2>/dev/null || git rev-parse HEAD)"
+  pre_rev="$(git stash create 2>/dev/null)"; [ -n "$pre_rev" ] || pre_rev="$(git rev-parse HEAD)"
   run_aider "$prompt" "${ARGS[@]}"
   status=FAIL
   for attempt in $(seq 0 "$MAX_FIX"); do
