@@ -9,6 +9,26 @@ from rmg.similarity import similarity, concepts, Embedder
 
 FALLBACK_MARKERS = ("only as a fallback", "as a fallback", "fall back to", "fallback", "on disconnect", "as a backup", "instead of", "rather than")
 
+def _requirements(context) -> list:
+    if context is None:
+        return []
+    if isinstance(context, str):
+        return [context]
+    if isinstance(context, dict):
+        return list(context.get("requirements", []))
+    return []
+
+def _relaxes(reason: str, requirement: str) -> bool:
+    reason_l = reason.lower()
+    req_l = requirement.lower()
+    if any(k in reason_l for k in ("latency", "sub-second", "real-time", "realtime")) and \
+       any(k in req_l for k in ("30 second", "30 s", "latency no longer matters", "slower updates", "updates are fine")):
+        return True
+    if any(k in reason_l for k in ("cost", "expensive")) and \
+       any(k in req_l for k in ("budget increased", "cost is not an issue", "cost doesn't matter")):
+        return True
+    return False
+
 # Verbs that indicate a proposal
 PROPOSAL_VERBS = {
     "use", "try", "poll", "build", "add", "switch", "copy", "mirror",
@@ -118,6 +138,9 @@ class Guard:
         proposals = extract_proposals(message)
         return [self.check_one(p, context) for p in proposals]
 
+    def reconsider_text(self, record, change) -> str:
+        return f"This was previously rejected because {record.rejection_reason}. I am reconsidering it because {change} has changed."
+
     def check_one(self, proposal: str, context: Optional[str] = None) -> GuardResult:
         # Get active rejections
         active_records = self.ledger.active()
@@ -226,6 +249,15 @@ class Guard:
                 best_reason = reason
                 best_conditions_changed = False # Default, could be updated by context logic later if implemented
 
+        # Reconsider logic
+        if best_record is not None and best_decision in (Decision.BLOCK, Decision.WARN):
+            for req in _requirements(context):
+                if (best_record.reconsider_if and similarity(req, best_record.reconsider_if, embedder=self.embedder) >= 0.35) or _relaxes(best_record.rejection_reason, req):
+                    best_decision = Decision.RECONSIDER
+                    best_conditions_changed = True
+                    best_reason = self.reconsider_text(best_record, req)
+                    break
+
         # Apply side effects for the best match
         if best_record:
             if best_decision == Decision.BLOCK:
@@ -233,7 +265,9 @@ class Guard:
                 self.ledger.log_event("block", best_record.id)
             elif best_decision == Decision.WARN:
                 self.ledger.log_event("warn", best_record.id)
-            
+            elif best_decision == Decision.RECONSIDER:
+                self.ledger.log_event("reconsider", best_record.id)
+
             matched_rejection_dict = {
                 "id": best_record.id,
                 "canonical_idea": best_record.canonical_idea,
