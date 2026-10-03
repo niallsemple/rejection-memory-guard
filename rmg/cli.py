@@ -70,6 +70,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # serve
     p_serve = subparsers.add_parser("serve", help="Start web server")
+    p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8765)
 
     args = parser.parse_args(argv)
@@ -146,21 +147,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                 
         elif args.command == "stats":
             try:
-                import rmg.analytics
-                # Assuming analytics has a main or print function, or we just import to check availability
-                # The spec says "print 'not available yet' on ImportError"
-                # If it imports successfully, we might expect it to do something or we just pass.
-                # Given the spec is vague on what stats does if available, I'll assume it's a placeholder.
-                pass
+                from rmg.analytics import print_dashboard
+                print_dashboard(ledger or api.get_ledger())
             except ImportError:
                 print("not available yet")
                 
         elif args.command == "serve":
             try:
-                import rmg.web
-                # Assuming web has a serve function
-                # rmg.web.serve(port=args.port)
-                pass
+                from rmg.web import serve
+                print(f"Serving on http://{args.host}:{args.port}")
+                serve(ledger or api.get_ledger(), host=args.host, port=args.port)
             except ImportError:
                 print("not available yet")
 

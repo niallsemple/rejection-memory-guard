@@ -56,3 +56,15 @@ def test_cli_inject(tmp_path, capsys):
     assert ret == 0
     captured = capsys.readouterr()
     assert "REJECTED APPROACHES" in captured.out
+
+def test_cli_stats(tmp_path, capsys):
+    db_path = str(tmp_path / "test.db")
+    
+    # Reject something
+    main(["--db", db_path, "reject", "poll the api every second", "--reason", "latency"])
+    
+    # Stats
+    ret = main(["--db", db_path, "stats"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "rejected_ideas_total" in captured.out
