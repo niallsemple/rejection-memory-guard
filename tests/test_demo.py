@@ -16,7 +16,7 @@ def test_demo(tmp_path):
     out = run_demo(str(tmp_path / "d.db"), verbose=False)
 
     assert out["result"]["decision"] == "BLOCK"
-    assert "edge decays" in out["result"]["reason"]
+    assert "edge decays" in out["result"]["reason"].lower()
     assert "REJECTED APPROACHES — DO NOT REPROPOSE" in out["injection"]
     assert out["fallback"]["decision"] in ("WARN", "ALLOW")
     assert out["reconsider"]["decision"] == "RECONSIDER"

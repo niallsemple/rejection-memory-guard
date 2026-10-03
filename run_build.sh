@@ -35,6 +35,9 @@ files_for(){ case "$1" in
   10b) echo "rmg/cli.py tests/test_cli.py";;
   11) echo "demo.py tests/test_demo.py";;
   12) echo "README.md pyproject.toml";;
+  13a) echo "rmg/inject.py tests/test_inject.py";;
+  13b) echo "rmg/extract.py tests/test_extract.py";;
+  13c) echo "rmg/guard.py tests/test_guard_reconsider.py";;
 esac; }
 reads_for(){ case "$1" in   # most important first; trimmed from the end to fit BUDGET_BYTES
   01|02|03|04) echo "SPEC.md";;
@@ -49,8 +52,9 @@ reads_for(){ case "$1" in   # most important first; trimmed from the end to fit 
   10b) echo "";;
   11) echo "";;
   12) echo "SPEC.md rmg/api.py";;
+  13a|13b|13c) echo "";;
 esac; }
-fmt_for(){ case "$1" in 04b|06a|06b|10b) echo diff;; *) echo whole;; esac; }
+fmt_for(){ case "$1" in 04b|06a|06b|10b|13a|13b|13c) echo diff;; *) echo whole;; esac; }
 fsize(){ [ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0; }
 
 # build aider args: editable files then reads that fit in the budget
