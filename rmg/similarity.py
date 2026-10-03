@@ -30,43 +30,41 @@ STOPWORDS = {
     "oughtn't", "daren't", "usedn't", "wanna", "gonna", "gotta",
 }
 
-# Concept synonyms: canonical key -> list of synonym phrases
+# Concept synonyms: canonical key -> list of synonym phrases (for backward compatibility / exact matches)
 CONCEPT_SYNONYMS: Dict[str, List[str]] = {
     "copy_trading": [
-        "copy wallets", "copy trading", "copy-trade", "copy trade",
-        "mirror traders", "mirror trades", "follow whales", "whale following",
-        "duplicate trades", "top addresses", "smart money", "copy top wallets",
-        "copy profitable wallets", "copy top traders", "copy whale wallets",
-        "copy trading strategy", "copy trading bot", "copy trading platform",
-        "copy trading service", "copy trading app", "copy trading tool",
-        "copy trading system", "copy trading algorithm", "copy trading model",
-        "copy trading method", "copy trading approach", "copy trading technique",
-        "copy trading tactic", "copy trading plan", "copy trading scheme",
-        "copy trading design", "copy trading architecture", "copy trading infrastructure",
-        "copy trading framework", "copy trading engine", "copy trading core",
-        "copy trading logic", "copy trading code", "copy trading script",
-        "copy trading program", "copy trading application", "copy trading software",
-        "copy trading hardware", "copy trading device", "copy trading gadget",
-        "copy trading widget", "copy trading component", "copy trading module",
-        "copy trading plugin", "copy trading extension", "copy trading add-on",
-        "copy trading feature", "copy trading function", "copy trading capability",
-        "copy trading capacity", "copy trading potential", "copy trading possibility",
-        "copy trading opportunity", "copy trading chance", "copy trading prospect",
-        "copy trading outlook", "copy trading forecast", "copy trading prediction",
+        "copy wallets", "copy trading", "mirror traders", "follow whales",
+        "duplicate trades", "smart money", "copy top wallets",
     ],
     "polling": [
-        "poll", "polling", "poll the api", "hit the endpoint",
-        "query the endpoint", "every second", "once a second", "1 hz",
-        "per second", "refresh repeatedly", "request in a loop",
+        "every second", "once a second", "per second", "1 hz",
     ],
     "websocket": [
         "websocket", "websockets", "ws stream", "push stream",
         "streaming subscription",
     ],
     "fallback": [
-        "fallback", "fall back", "only on disconnect",
-        "backup when disconnected",
+        "fallback", "fall back", "on disconnect", "as a backup",
     ],
+}
+
+# Concept rules: canonical key -> list of (verbs, objects) tuples
+# A concept matches if text contains at least one verb AND at least one object from the same rule
+CONCEPT_RULES: Dict[str, List[tuple[Set[str], Set[str]]]] = {
+    "copy_trading": [
+        (
+            {"copy", "mirror", "follow", "duplicat", "replicat", "clone", "shadow", "piggyback"},
+            {"wallet", "trader", "whale", "address", "trade", "position", "smart", "money", "top"}
+        )
+    ],
+    "polling": [
+        (
+            {"poll", "hit", "query", "request", "fetch", "refresh", "call"},
+            {"api", "endpoint", "rest", "second", "hz", "interval", "loop"}
+        )
+    ],
+    "websocket": [],
+    "fallback": [],
 }
 
 def _stem(word: str) -> str:
@@ -76,6 +74,9 @@ def _stem(word: str) -> str:
     for suffix in ("ing", "ed", "es", "s"):
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
             return word[:-len(suffix)]
+    # Strip trailing 'e' if length > 5 (e.g. duplicate -> duplicat)
+    if len(word) > 5 and word.endswith("e"):
+        return word[:-1]
     return word
 
 def tokenize(text: str) -> List[str]:
@@ -118,13 +119,29 @@ def concepts(text: str) -> Set[str]:
     """Return concept keys present in the text."""
     if not text:
         return set()
+    
     lower_text = text.lower()
     found = set()
+    
+    # 1. Check exact phrase matches from CONCEPT_SYNONYMS
     for key, syns in CONCEPT_SYNONYMS.items():
         for syn in syns:
             if syn.lower() in lower_text:
                 found.add(key)
                 break
+    
+    # 2. Check keyword rules from CONCEPT_RULES
+    tokens = set(tokenize(text))
+    for key, rules in CONCEPT_RULES.items():
+        if key in found:
+            continue
+        for verbs, objects in rules:
+            has_verb = any(v in tokens for v in verbs)
+            has_object = any(o in tokens for o in objects)
+            if has_verb and has_object:
+                found.add(key)
+                break
+                
     return found
 
 def tfidf_similarity(a: str, b: str, corpus: Optional[List[str]] = None) -> float:

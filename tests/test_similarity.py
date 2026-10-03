@@ -124,3 +124,37 @@ class TestSimilarity:
         # These don't share concepts
         score_without_concept = similarity("bake a cake with sugar", "mix flour and water")
         assert score_with_concept > score_without_concept
+
+    def test_concepts_copy_trading_variants(self):
+        """Test various copy trading paraphrases."""
+        texts = [
+            "mirror the top traders",
+            "follow whales",
+            "duplicate trades from top addresses",
+            "copy wallets",
+            "replicate what smart money wallets do",
+            "shadow the biggest whale positions",
+        ]
+        for text in texts:
+            found = concepts(text)
+            assert "copy_trading" in found, f"Expected copy_trading in {text}"
+
+    def test_concepts_polling_variants(self):
+        """Test various polling paraphrases."""
+        texts = [
+            "hit the REST endpoint once a second",
+            "query the endpoint at 1 Hz",
+        ]
+        for text in texts:
+            found = concepts(text)
+            assert "polling" in found, f"Expected polling in {text}"
+
+    def test_concepts_none(self):
+        """Test that unrelated texts have no concepts."""
+        found = concepts("bake a chocolate cake")
+        assert len(found) == 0
+
+    def test_concepts_no_false_positive(self):
+        """Test that verb without object doesn't trigger concept."""
+        found = concepts("follow the documentation")
+        assert "copy_trading" not in found
