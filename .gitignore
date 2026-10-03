@@ -12,3 +12,4 @@ nohup.out
 *.db
 .driver.pid
 web_demo.log
+.web_demo.pid
