@@ -52,3 +52,35 @@ def test_empty_ledger(ledger):
     result_hand = handoff_block(ledger, "some task")
     assert "- none" in result_hand
     assert "(not decided)" in result_hand
+
+def add_wallet(ledger):
+    ledger.add(Record(id="copy1", record_type=RecordType.REJECTION, status=Status.ACTIVE,
+        canonical_idea="Copy trades of top-performing on-chain wallets",
+        rejection_reason="Edge decays before execution.",
+        reconsider_if="execution latency drops below 100ms"))
+
+SOLANA_TASKS = ["improve the Solana trading strategy using top wallets",
+                "Working on a Solana trading strategy; several ideas evaluated."]
+
+def test_compaction_lists_relevant_wallet_rejection(ledger):
+    add_two(ledger)
+    add_wallet(ledger)
+    for task in SOLANA_TASKS:
+        result = compaction_block(ledger, task)
+        assert "(none relevant)" not in result
+        assert "- Copy trades of top-performing on-chain wallets [copy1, rejected " in result
+        assert "\n  Reason: Edge decays before execution\n" in result
+        assert result.endswith("  Reconsider only if: execution latency drops below 100ms")
+        assert "mongo1" not in result
+        assert "poll1" not in result
+
+def test_handoff_lists_relevant_wallet_rejection(ledger):
+    add_two(ledger)
+    add_wallet(ledger)
+    result = handoff_block(ledger, SOLANA_TASKS[1], "momentum signals")
+    known = result.split("KNOWN REJECTIONS:\n")[1].split("\nCURRENT APPROACH:")[0]
+    assert known.startswith("- Copy trades of top-performing on-chain wallets [copy1")
+    assert "  Reason: Edge decays before execution" in known
+    assert "  Reconsider only if: execution latency drops below 100ms" in known
+    assert "- none" not in known
+    assert "mongo1" not in known

@@ -1,21 +1,24 @@
 from typing import List, Optional
 from rmg.models import Record
 from rmg.ledger import Ledger
-from rmg.similarity import similarity, concepts
+from rmg.similarity import similarity, concepts, tokenize
 
-def relevant_rejections(ledger: Ledger, task: str, limit: int = 8, min_sim: float = 0.15) -> List[Record]:
+GENERIC_TOKENS = {"use", "using", "work", "improv", "idea", "design", "build", "make", "add", "task", "plan", "approach", "strategy", "several", "evaluat", "system", "new", "get", "need"}
+
+def relevant_rejections(ledger: Ledger, task: str, limit: int = 8, min_sim: float = 0.10) -> List[Record]:
     """
     Find relevant rejections for a given task.
     """
     active = ledger.active()
     scored = []
     for r in active:
-        match_text = r.match_text()
-        sim = similarity(task, match_text)
-        shared = concepts(task) & concepts(match_text)
+        text = r.match_text()
+        sim = similarity(task, text)
+        shared = concepts(task) & concepts(text)
+        shared_tokens = (set(tokenize(task)) & set(tokenize(text))) - GENERIC_TOKENS
         
-        if sim >= min_sim or shared:
-            score = sim + 0.2 * len(shared)
+        if sim >= min_sim or shared or shared_tokens:
+            score = sim + 0.2 * len(shared) + 0.1 * len(shared_tokens)
             scored.append((score, r))
             
     # Sort by score descending
@@ -23,22 +26,30 @@ def relevant_rejections(ledger: Ledger, task: str, limit: int = 8, min_sim: floa
     
     return [r for _, r in scored[:limit]]
 
+def _strip_punct(s: str) -> str:
+    return s.rstrip(".!? ")
+
 def _bullet(r: Record) -> str:
     """
     Format a record as a bullet point string.
     """
-    # rejected_at is an ISO string, first 10 chars are YYYY-MM-DD
     date_str = r.rejected_at[:10] if r.rejected_at else "unknown"
+    reason = _strip_punct(r.rejection_reason)
     
-    base = f"- [{r.id}] {r.canonical_idea} — rejected {date_str}: {r.rejection_reason}"
+    lines = [
+        f"- {r.canonical_idea} [{r.id}, rejected {date_str}]",
+        f"  Reason: {reason}"
+    ]
     
     if r.reconsider_if:
-        base += f" (reconsider only if: {r.reconsider_if})"
+        condition = _strip_punct(r.reconsider_if)
+        lines.append(f"  Reconsider only if: {condition}")
         
     if r.fingerprint and r.fingerprint.replacement:
-        base += f" -> use instead: {r.fingerprint.replacement}"
+        replacement = _strip_punct(r.fingerprint.replacement)
+        lines.append(f"  Use instead: {replacement}")
         
-    return base
+    return "\n".join(lines)
 
 def compaction_block(ledger: Ledger, task: str, limit: int = 8) -> str:
     """
